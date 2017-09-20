@@ -461,7 +461,8 @@ impl<'input> Tokenizer<'input> {
                     self.bump();
                     Some(Ok((idx0, BitNot, idx0 + 1)))
                 }
-                Some((idx0, c)) if c == '`' || c == '\'' || c == '"' => Some(self.literal(idx0, c)),
+                Some((idx0, c)) if c == '`' => Some(self.literal(idx0, c)),
+                Some((idx0, c)) if c == '\'' || c == '"' => Some(self.string_literal(idx0, c)),
                 Some((idx0, '.')) => match self.bump() {
                     Some((_, c)) if c.is_digit(10) => Some(self.fractional_part(idx0)),
                     _ => Some(Ok((idx0, Dot, idx0 + 1))),
@@ -507,6 +508,56 @@ impl<'input> Tokenizer<'input> {
     fn bump(&mut self) -> Option<(usize, char)> {
         self.lookahead = self.chars.next();
         self.lookahead
+    }
+    fn unbump(&mut self) -> Option<(usize, char)> {
+        self.lookahead = self.chars.next_back();
+        self.lookahead
+    }
+
+    fn string_literal(&mut self, idx0: usize, delim: char) -> Result<Spanned<Tok<'input>>, Error> {
+        let mut t = self.bump();
+        loop {
+            match t {
+                Some((_, c)) if c == delim => {
+                    if let Some((_, nc)) = self.bump() {
+                        if nc == delim {
+                            t = self.bump();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                Some((idx1, c)) if c == '\\' => {
+                    // consume all backslashes
+                    self.bump();
+                    t = self.take_while(|c| c == '\\');
+                    if let Some((idx2, nc)) = t {
+                        // consume next delimiter if it has been escaped
+                        if (idx2 - idx1) % 2 != 0 {
+                            t = self.bump();
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                Some((_, _)) => {
+                    t = self.bump();
+                    continue;
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+
+        match t {
+            Some((idx1, c)) if c == delim => {
+                let text = &self.text[idx0 + 1..idx1];
+                let tok = StringLiteral(text);
+                Ok((idx0, tok, idx1 + 1))
+            }
+            _ => error(UnterminatedLiteral, idx0, self.text),
+        }
     }
 
     fn literal(&mut self, idx0: usize, delim: char) -> Result<Spanned<Tok<'input>>, Error> {
