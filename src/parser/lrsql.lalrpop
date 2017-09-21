@@ -27,17 +27,29 @@ pub CmdList: Vec<Option<Cmd>> = {
 };
 
 ExplainCmd: Cmd =
-    <explain:("explain" <("query" "plan")?>)?> <cmd:Stmt> => {
-        if explain.is_some() {
-            if explain.unwrap().is_some() {
-                Cmd::ExplainQueryPlan(cmd)
-            } else {
-                Cmd::Explain(cmd)
+    <explain:ExplainOpts?> <cmd:Stmt> => {
+        match explain {
+            Some(explain_type) => {
+                Cmd::Explain(explain_type, cmd)
             }
-        } else {
-            Cmd::Stmt(cmd)
+            None => Cmd::Stmt(cmd)
         }
+//        if explain.is_some() {
+//            if explain.unwrap().is_some() {
+//                Cmd::ExplainQueryPlan(cmd)
+//            } else {
+//                Cmd::Explain(cmd)
+//            }
+//        } else {
+//            Cmd::Stmt(cmd)
+//        }
     };
+
+ExplainOpts : Option<ExplainType> = "explain" <explain_type:ExplainType?> => explain_type;
+ExplainType : ExplainType = {
+    "extended" => ExplainType::Extended,
+    "partitions" => ExplainType::Partitions
+};
 
 Stmt: Stmt = {
     AlterTable,
@@ -64,6 +76,7 @@ Stmt: Stmt = {
     Savepoint,
     Select => Stmt::Select(<>),
     Update,
+    SetVariable,
     Vacuum,
 };
 
@@ -182,6 +195,10 @@ Id: Name = {
     "reindex" => "reindex".to_owned(),
     "rename" => "rename".to_owned(),
     "if" => "if".to_owned(),
+    "global" => "global".to_owned(),
+    "session" => "session".to_owned(),
+    "extended" => "extended".to_owned(),
+    "partitions" => "partitions".to_owned()
 };
 
 IdString: Name = {
@@ -524,6 +541,44 @@ Set: Set = {
     },
 };
 
+SetVariable: Stmt = "set" <var_assignment:VariableAssignment> => Stmt::SetVariable(vec![var_assignment]);
+
+
+VariableAssignment: VariableAssignment = {
+   // system variable assignment
+  <var_scope:SystemVariableScope?> <var_name:Name> "=" <expr:Expr> => VariableAssignment {
+       variable: Variable {
+           var_name: var_name,
+           var_type: VariableType::System(var_scope.unwrap_or(SystemVariableScope::Session)),
+        },
+        expr: expr
+    },
+    <var:VariableAccessor> "=" <expr:Expr> => VariableAssignment {
+        variable: var,
+        expr: expr
+    }
+};
+
+
+VariableAccessor : Variable = {
+    "@@" <var_scope:SystemVariableAccessorScope?> <var_name:Name> => Variable {
+        var_name: var_name,
+        var_type: VariableType::System(var_scope.unwrap_or(SystemVariableScope::Session))
+    },
+    "@" <var_name:Name> => Variable {
+        var_name: var_name,
+        var_type: VariableType::User
+    }
+};
+SystemVariableAccessorScope : SystemVariableScope = {
+    "global" "." => SystemVariableScope::Global,
+    "session" "." => SystemVariableScope::Session,
+};
+
+SystemVariableScope: SystemVariableScope = {
+    "global" => SystemVariableScope::Global,
+    "session" => SystemVariableScope::Session
+};
 ////////////////////////// The INSERT command /////////////////////////////////
 Insert: Stmt =
     <with:With?> <or_conflict:InsertCmd> "into" <tbl_name:QualifiedTableName> <columns:("(" <CommaList<ColumnName>> ")")?> <body:InsertBody> => Stmt::Insert {
@@ -542,6 +597,7 @@ InsertBody: InsertBody = {
 Expr: Expr = {
     OrExpr,
 };
+
 
 // %left OR.
 OrExpr: Expr = {
@@ -603,6 +659,7 @@ EqExpr: Expr = {
     },
     CompExpr,
 };
+
 // %left GT LE LT GE.
 CompExpr: Expr = {
     <lhs:CompExpr> ">" <rhs:BitExpr> => Expr::Binary(Box::new(lhs), Operator::Greater, Box::new(rhs)),
@@ -648,7 +705,12 @@ BitNotExpr: Expr = {
     "~" <BitNotExpr> => Expr::Unary(UnaryOperator::BitwiseNot, Box::new(<>)),
     "-" <BitNotExpr> => Expr::Unary(UnaryOperator::Negative, Box::new(<>)),
     "+" <BitNotExpr> => Expr::Unary(UnaryOperator::Positive, Box::new(<>)),
-    OtherExpr,
+    AssignExpr,
+};
+
+AssignExpr : Expr = {
+    <lhs:VariableAccessor> ":=" <rhs:AssignExpr> => Expr::Assign(lhs, Box::new(rhs)),
+    OtherExpr
 };
 
 OtherExpr: Expr = {
@@ -658,7 +720,9 @@ OtherExpr: Expr = {
 // TODO JOIN_KW
     <Name> "." <Name> => Expr::Qualified(<>),
     <Name> "." <Name> "." <Name> => Expr::DoublyQualified(<>),
-    "Variable" => Expr::Variable(<>.to_owned()),
+    //"Variable" => Expr::Variable(<>.to_owned()),
+    "Placeholder" => Expr::Placeholder,
+    <VariableAccessor> => Expr::Variable(<>),
     "cast" "(" <expr:Expr> "as" <type_name:TypeName> ")" => Expr::Cast {
         expr: Box::new(expr),
         type_name: type_name,
@@ -957,9 +1021,14 @@ extern {
         "with" => Tok::With,
         "without" => Tok::Without,
 
+        "extended" => Tok::Extended,
+        "partitions" => Tok::Partitions,
+
         "StringLiteral" => Tok::StringLiteral(<&'input str>),
         "Id" => Tok::Id(<&'input str>),
-        "Variable" => Tok::Variable(<&'input str>),
+        "Placeholder" => Tok::Placeholder,
+        "global" => Tok::Global,
+        "session" => Tok::Session,
 
         "Blob" => Tok::Blob(<&'input str>),
         "Integer" => Tok::Integer(<&'input str>),
@@ -972,6 +1041,8 @@ extern {
         "||" => Tok::Concat,
         "." => Tok::Dot,
         "=" => Tok::Equals,
+        ":" => Tok::Colon,
+        ":=" => Tok::Assign,
         ">" => Tok::GreaterThan,
         "=>" => Tok::GreaterEquals,
         "(" => Tok::LeftParen,
@@ -987,5 +1058,7 @@ extern {
         ";" => Tok::Semi,
         "/" => Tok::Slash,
         "*" => Tok::Star,
+        "@" => Tok::UserVariableAccessor,
+        "@@" => Tok::SystemVariableAccessor
     }
 }

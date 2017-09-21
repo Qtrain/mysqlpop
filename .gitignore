@@ -1,3 +1,4 @@
 target/
 **/*.rs.bk
-src/parser/lrsql.lalrpop
+src/parser/lrsql.rs
+Cargo.lock

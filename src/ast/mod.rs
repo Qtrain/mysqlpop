@@ -2,10 +2,19 @@
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Cmd {
-    Explain(Stmt),
-    ExplainQueryPlan(Stmt),
+    Explain(Option<ExplainType>, Stmt),
+    Describe(Option<ExplainType>, Stmt),
     Stmt(Stmt),
 }
+
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExplainType {
+    Extended,
+    Partitions
+}
+
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
@@ -116,6 +125,7 @@ pub enum Stmt {
         order_by: Option<Vec<SortedColumn>>,
         limit: Option<Limit>,
     },
+    SetVariable(Vec<VariableAssignment>),
     // database name
     Vacuum(Option<Name>),
 }
@@ -191,7 +201,39 @@ pub enum Expr {
     // Unary expression
     Unary(UnaryOperator, Box<Expr>),
     // Parameters
-    Variable(String),
+    //Variable(String),
+    Placeholder,
+    Variable(Variable),
+    Assign(Variable, Box<Expr>)
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Variable {
+    pub var_name: Name,
+    pub var_type: VariableType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariableAssignment {
+    pub variable : Variable,
+    pub expr: Expr
+}
+
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VariableType {
+    System(SystemVariableScope),
+    User,
+    //Local,
+    //Parameter
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SystemVariableScope {
+    Global,
+    Session,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,7 +262,7 @@ pub enum Operator {
     BitwiseAnd,
     BitwiseOr,
     Concat, // String concatenation (||)
-    Equals, // = or ==
+    Equals,
     Divide,
     Greater,
     GreaterEquals,

@@ -182,7 +182,12 @@ pub enum Tok<'input> {
     // Identifiers:
     StringLiteral(&'input str),
     Id(&'input str),
-    Variable(&'input str),
+    Global,
+    Session,
+    //Variable(&'input str),
+    Placeholder,
+    SystemVariableAccessor,
+    UserVariableAccessor,
 
     // Values:
     Blob(&'input str),
@@ -197,6 +202,8 @@ pub enum Tok<'input> {
     Concat,
     Dot,
     Equals,
+    Colon,
+    Assign,
     GreaterThan,
     GreaterEquals,
     LeftParen,
@@ -212,6 +219,8 @@ pub enum Tok<'input> {
     Semi,
     Slash,
     Star,
+    Extended,
+    Partitions
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -339,7 +348,10 @@ const KEYWORDS: &'static [(&'static str, Tok<'static>)] = &[
     ("WHEN", When),
     ("WHERE", Where),
     ("WITH", With),
-    ("WITHOUT", Without)
+    ("GLOBAL", Global),
+    ("SESSION", Session),
+    ("EXTENDED", Extended),
+    ("PARTITIONS", Partitions)
     ];
 
 impl<'input> Tokenizer<'input> {
@@ -402,6 +414,14 @@ impl<'input> Tokenizer<'input> {
                     self.bump();
                     Some(Ok((idx0, Reminder, idx0 + 1)))
                 }
+                Some((idx0, ':')) => match self.bump() {
+                    Some((idx1, '=')) => {
+                        self.bump();
+                        Some(Ok((idx0, Assign, idx1 + 1)))
+                    }
+                    _ => Some(Ok((idx0, Colon, idx0 + 1))),
+                },
+
                 Some((idx0, '=')) => match self.bump() {
                     Some((idx1, '=')) => {
                         self.bump();
@@ -471,21 +491,15 @@ impl<'input> Tokenizer<'input> {
                 Some((idx0, '[')) => Some(self.bracket(idx0)),
                 Some((idx0, '?')) => {
                     self.bump();
-                    let num = match self.take_while_1(|c| c.is_digit(10)) {
-                        (false, _) => (idx0, Variable(""), idx0 + 1),
-                        (true, Some((end, _))) => (idx0, Variable(&self.text[idx0..end]), end), // '?' is included as part of the name
-                        (true, None) => (idx0, Variable(&self.text[idx0..]), self.text.len()),
-                    };
-                    Some(Ok(num))
+                    Some(Ok((idx0, Placeholder, idx0+1)))
                 }
-                Some((idx0, c)) if c == '$' || c == '@' || c == '#' || c == ':' => {
-                    self.bump();
-                    // '$' is included as part of the name
-                    let (start, name, end) = self.word(idx0);
-                    if name.len() == 1 {
-                        Some(error(BadVariableName, idx0, self.text))
-                    } else {
-                        Some(Ok((start, Variable(name), end)))
+                Some((idx0, c)) if c == '@'  => {
+                    match self.bump() {
+                        Some((idx1, nc)) if nc == '@' => {
+                            self.bump();
+                            Some(Ok((idx0, SystemVariableAccessor, idx1+1)))
+                        },
+                        _ => Some(Ok((idx0, UserVariableAccessor, idx0+1)))
                     }
                 }
                 Some((idx0, c)) if is_identifier_start(c) => if c == 'x' || c == 'X' {
