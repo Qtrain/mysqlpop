@@ -1,8 +1,41 @@
-# SQLPOP
+# MySQLPop
 
-[![Build Status](https://travis-ci.org/gwenn/sqlpop.svg?branch=master)](https://travis-ci.org/gwenn/sqlpop) [![Latest Version](https://img.shields.io/crates/v/sqlpop.svg)](https://crates.io/crates/sqlpop)
 
-SQL parser (as understood by SQLite)
+MySQL parser (based on SQLPop, a SQLite query parser)
+
+## Goal
+
+Provide enough support for MySQL-flavored SQL to provide a base for higher level tooling (query fingerprints, read write splitting proxies, intrusion detection, etc).
+
+## MySQL Flavor
+
+- [x] Set Variable statements (`set @foo = 1`)
+- [x] MySQL-style variables (`@@global.read_only`)
+- [x] Variable assignment in expressions (`select @id := @id +1`)
+- [x] MySQL-style backslash escapes in strings (`'foo\'bar'`)
+- [x] Removed SQLite specific variable syntax
+- [x] Parameters/Placeholders (`select foo from bar where baz > ?`)
+- [ ] Prepared statements
+- [ ] Procedures
+- [ ] Transactions
+- [ ] XA Transactions
+- [ ] SHOW statements
+- [ ] Change autoincrement keyword
+- [ ] MySQL style create table (UNIQUE/FOREIGN key etc)
+- [ ] SELECT into variables/dumpfiles/procedures
+- [ ] DO statements
+- [ ] CALL statements
+- [ ] CHECK statements
+- [ ] FLUSH statements
+- [ ] GRANT/REVOKE statements
+- [ ] HANDLER statements
+- [ ] LOAD DATA statements
+- [ ] LOCK/UNLOCK statements
+- [ ] RENAME statement
+- [ ] USE statement
+- [ ] TRUNCATE statement
+
+And maybe some other differences we'll run into after we've knocked out this list.
 
 * [LARLPOP and custom lexer](https://github.com/nikomatsakis/lalrpop/issues/39)
 * [SQLite tokenizer](http://www.sqlite.org/src/artifact?ci=trunk&filename=src/tokenize.c)
