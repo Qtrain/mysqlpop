@@ -1,6 +1,8 @@
 # MySQLPop
 
 
+![screenshot](screenshot.png)
+
 MySQL parser (based on SQLPop, a SQLite query parser)
 
 ## Goal
